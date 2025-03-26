@@ -1,7 +1,10 @@
 images/
 training_plots/
+training_plots*/
 .DS_Store
 best_horizon_model.pth
 training_results.png
 __pycache__/
 checkpoints/
+checkpoints*/
+runs/
