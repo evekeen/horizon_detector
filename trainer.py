@@ -199,7 +199,7 @@ class Trainer:
         
         return epoch_val_loss
     
-    def train(self, num_epochs, early_stopping_patience=None):
+    def train(self, num_epochs, early_stopping_patience=None, test_loader=None):
         os.makedirs('training_plots', exist_ok=True)
         
         # Set up the figure for real-time plotting
@@ -226,6 +226,10 @@ class Trainer:
         early_stopping_counter = 0
         best_val_loss = float('inf')
         
+        # Lists to store test metrics
+        test_avg_y_errors = []
+        test_roll_errors = []
+        
         for epoch in range(self.current_epoch, self.current_epoch + num_epochs):
             epoch_start_time = time.time()
             print(f"\nEpoch {epoch+1}/{self.current_epoch + num_epochs}")
@@ -236,6 +240,17 @@ class Trainer:
             
             # Validation phase
             val_loss = self.validate_epoch()
+            
+            # Test phase (if test_loader is provided)
+            if test_loader is not None:
+                print(f"Testing model after epoch {epoch+1}...")
+                mean_avg_y_error, mean_roll_error = self.evaluate(test_loader)
+                test_avg_y_errors.append(mean_avg_y_error)
+                test_roll_errors.append(mean_roll_error)
+                
+                # Log test metrics to tensorboard
+                self.writer.add_scalar('Test/mean_avg_y_error', mean_avg_y_error, epoch)
+                self.writer.add_scalar('Test/mean_roll_error', mean_roll_error, epoch)
             
             # Update scheduler (except for OneCycleLR and ReduceLROnPlateau)
             if self.scheduler is not None and not isinstance(self.scheduler, torch.optim.lr_scheduler.OneCycleLR) and not isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
@@ -322,7 +337,11 @@ class Trainer:
         # Close tensorboard writer
         self.writer.close()
         
-        return self.model, self.train_losses, self.val_losses
+        # Return test metrics if collected
+        if test_loader is not None and test_avg_y_errors and test_roll_errors:
+            return self.model, self.train_losses, self.val_losses, test_avg_y_errors, test_roll_errors
+        else:
+            return self.model, self.train_losses, self.val_losses
     
     def _create_final_plot(self):
         plt.figure(figsize=(15, 10))

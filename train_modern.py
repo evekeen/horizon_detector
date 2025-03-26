@@ -142,10 +142,17 @@ def main():
     start_time = time.time()
     
     # Train the model
-    model, train_losses, val_losses = trainer.train(
+    result = trainer.train(
         num_epochs=args.epochs,
-        early_stopping_patience=args.early_stopping
+        early_stopping_patience=args.early_stopping,
+        test_loader=test_loader
     )
+    
+    # Unpack the results
+    if len(result) == 5:
+        model, train_losses, val_losses, test_avg_y_errors, test_roll_errors = result
+    else:
+        model, train_losses, val_losses = result
     
     training_time = time.time() - start_time
     print(f"\n✓ Training completed in {training_time/60:.2f} minutes")
@@ -153,7 +160,7 @@ def main():
     print(f"  - Final validation loss: {val_losses[-1]:.6f}")
     print(f"  - Best validation loss: {min(val_losses):.6f}")
     
-    print("\n[5/5] Evaluating model on test set...")
+    print("\n[5/5] Final evaluation on test set...")
     mean_avg_y_error, mean_roll_error = trainer.evaluate(test_loader)
     
     print(f"\n✓ Model evaluation complete")
