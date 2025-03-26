@@ -6,18 +6,32 @@ from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import numpy as np
 import time
+import argparse
 from tqdm import tqdm
 import matplotlib.ticker as ticker
 from horizon_dataset import HorizonDataset, create_data_loaders
 from horizon_model import HorizonNet, HorizonNetLight
+from checkpoint_manager import CheckpointManager
 
-def train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs=10, device='mps'):
+def train_model(model, train_loader, val_loader, criterion, optimizer, scheduler=None, num_epochs=10, device='mps', checkpoint_manager=None, resume_from=None):
     model.to(device)
     
     train_losses = []
     val_losses = []
     
     best_val_loss = float('inf')
+    start_epoch = 0
+    
+    # Resume from checkpoint if specified
+    if resume_from is not None:
+        if checkpoint_manager is not None:
+            checkpoint = checkpoint_manager.load_checkpoint(resume_from, model, optimizer, scheduler)
+            if checkpoint is not None:
+                start_epoch = checkpoint['epoch'] + 1
+                train_losses = checkpoint['train_losses']
+                val_losses = checkpoint['val_losses']
+                best_val_loss = checkpoint['best_val_loss']
+                print(f"Resuming from epoch {start_epoch}")
     
     # Set up the figure for real-time plotting
     plt.ion()  # Turn on interactive mode
@@ -43,9 +57,10 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
     ax2.grid(True, axis='y')
     
     # For saving the figure
+    # Create both training_plots directory and any necessary parent directories
     os.makedirs('training_plots', exist_ok=True)
     
-    for epoch in range(num_epochs):
+    for epoch in range(start_epoch, num_epochs):
         epoch_start_time = time.time()
         print(f"\nEpoch {epoch+1}/{num_epochs}")
         print("-" * 50)
@@ -110,8 +125,25 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
         # Save the best model
         if epoch_val_loss < best_val_loss:
             best_val_loss = epoch_val_loss
-            torch.save(model.state_dict(), 'best_horizon_model.pth')
+            if checkpoint_manager is not None:
+                checkpoint_manager.save_best_model(model, best_val_loss, epoch)
+            else:
+                torch.save(model.state_dict(), 'best_horizon_model.pth')
             print("✓ Saved best model!")
+        
+        # Save checkpoint
+        if checkpoint_manager is not None:
+            checkpoint_manager.save_checkpoint(
+                model, optimizer, scheduler, epoch, 
+                train_losses, val_losses, best_val_loss
+            )
+        
+        # Step the learning rate scheduler if provided
+        if scheduler is not None:
+            if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                scheduler.step(epoch_val_loss)
+            else:
+                scheduler.step()
         
         # Update the plots
         epochs = list(range(1, epoch + 2))
@@ -142,8 +174,11 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
         fig.canvas.draw()
         fig.canvas.flush_events()
         
+        # Make sure the directory exists before saving
+        plot_dir = 'training_plots'
+        os.makedirs(plot_dir, exist_ok=True)
         # Save the current plot
-        plt.savefig(f'training_plots/epoch_{epoch+1}.png')
+        plt.savefig(os.path.join(plot_dir, f'epoch_{epoch+1}.png'))
         
         # Print progress bar
         progress = (epoch + 1) / num_epochs * 100
@@ -151,7 +186,13 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
         print(progress_bar)
     
     # Load the best model
-    model.load_state_dict(torch.load('best_horizon_model.pth'))
+    best_model_path = os.path.join("checkpoints", "best_model.pth")
+    if os.path.exists(best_model_path):
+        checkpoint = torch.load(best_model_path)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        print(f"Loaded best model from epoch {checkpoint['epoch']}")
+    elif os.path.exists('best_horizon_model.pth'):
+        model.load_state_dict(torch.load('best_horizon_model.pth'))
     
     return model, train_losses, val_losses
 
@@ -232,10 +273,21 @@ def plot_results(train_losses, val_losses):
                 fontsize=10)
     
     plt.tight_layout()
-    plt.savefig('training_results.png', dpi=300)
+    # Ensure directory exists before saving final results
+    os.makedirs('training_plots', exist_ok=True)
+    plt.savefig(os.path.join('training_plots', 'training_results.png'), dpi=300)
     plt.show()
 
 def main():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Train horizon detection model')
+    parser.add_argument('--resume', type=str, help='path to checkpoint to resume from')
+    parser.add_argument('--epochs', type=int, default=20, help='number of epochs to train')
+    parser.add_argument('--batch-size', type=int, default=32, help='batch size for training')
+    parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
+    parser.add_argument('--model', type=str, default='light', choices=['full', 'light'], help='model type: full (ResNet50) or light (MobileNetV3)')
+    args = parser.parse_args()
+    
     # Check if MPS is available
     if torch.backends.mps.is_available():
         device = torch.device("mps")
@@ -251,7 +303,7 @@ def main():
     # Create data loaders
     csv_file = 'horizon_data.csv'
     img_dir = 'images'
-    batch_size = 32
+    batch_size = args.batch_size
     
     print("\n" + "=" * 50)
     print("HORIZON LINE DETECTION MODEL TRAINING")
@@ -269,24 +321,39 @@ def main():
     
     print("\n[2/5] Creating model architecture...")
     # Create model
-    model = HorizonNetLight(pretrained=True)
+    if args.model == 'full':
+        model = HorizonNet(pretrained=True)
+        model_name = 'HorizonNet'
+    else:
+        model = HorizonNetLight(pretrained=True)
+        model_name = 'HorizonNetLight'
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     
     print(f"✓ Model created successfully")
-    print(f"  - Architecture: HorizonNetLight")
+    print(f"  - Architecture: {model_name}")
     print(f"  - Total parameters: {total_params:,}")
     print(f"  - Trainable parameters: {trainable_params:,}")
     
     print("\n[3/5] Setting up training configuration...")
     # Define loss function and optimizer
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
-    num_epochs = 20
+    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    
+    # Learning rate scheduler
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='min', factor=0.5, patience=3, verbose=True
+    )
+    
+    # Create checkpoint manager
+    checkpoint_manager = CheckpointManager(checkpoint_dir="checkpoints", max_to_keep=5)
+    
+    num_epochs = args.epochs
     
     print(f"✓ Training configuration set")
     print(f"  - Loss function: MSELoss")
-    print(f"  - Optimizer: Adam (lr=0.001)")
+    print(f"  - Optimizer: Adam (lr={args.lr})")
+    print(f"  - Scheduler: ReduceLROnPlateau")
     print(f"  - Epochs: {num_epochs}")
     print(f"  - Device: {device}")
     
@@ -294,8 +361,9 @@ def main():
     start_time = time.time()
     
     model, train_losses, val_losses = train_model(
-        model, train_loader, val_loader, criterion, optimizer, 
-        num_epochs=num_epochs, device=device
+        model, train_loader, val_loader, criterion, optimizer,
+        scheduler=scheduler, num_epochs=num_epochs, device=device,
+        checkpoint_manager=checkpoint_manager, resume_from=args.resume
     )
     
     training_time = time.time() - start_time
