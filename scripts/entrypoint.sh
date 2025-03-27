@@ -17,7 +17,8 @@ if [ ! -z "$S3_DATASET_PATH" ]; then
     
     echo "Unpacking dataset..."
     cd /workspace/data
-    /workspace/unpack_dataset.sh .
+    /workspace/unpack_dataset.sh --purge .
+    mv -r . /workspace/repo/
     cd /workspace/repo
 fi
 

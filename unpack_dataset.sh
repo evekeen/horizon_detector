@@ -1,11 +1,26 @@
 #!/bin/bash
 
-if [ "$#" -ne 1 ]; then
-    echo "Usage: $0 input-dir"
+purge=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -p|--purge)
+            purge=true
+            shift
+            ;;
+        *)
+            input_dir="$1"
+            shift
+            ;;
+    esac
+done
+
+if [ -z "$input_dir" ]; then
+    echo "Usage: $0 [-p|--purge] input-dir"
+    echo "Options:"
+    echo "  -p, --purge    Delete zip files after unpacking"
     exit 1
 fi
-
-input_dir="$1"
 
 if [ ! -d "$input_dir" ]; then
     echo "Error: Directory $input_dir does not exist"
@@ -21,4 +36,7 @@ fi
 for f in "$input_dir"/*.zip; do
     [ -f "$f" ] || continue
     unzip "$f"
+    if [ "$purge" = true ]; then
+        rm "$f"
+    fi
 done
