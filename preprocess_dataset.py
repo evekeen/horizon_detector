@@ -4,7 +4,7 @@ import math
 
 # Read the original dataset
 data = pd.read_csv('metadata.csv', header=None)
-data.columns = ['image', 'left_x', 'left_y', 'right_x', 'right_y']
+data.columns = ['image', 'width', 'height', 'left_x', 'left_y', 'right_x', 'right_y']
 
 # Calculate average y coordinate and roll angle for each horizon line
 processed_data = []
