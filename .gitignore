@@ -1,4 +1,5 @@
 images/
+images*/
 training_plots/
 training_plots*/
 .DS_Store
@@ -8,3 +9,4 @@ __pycache__/
 checkpoints/
 checkpoints*/
 runs/
+metadata*.csv

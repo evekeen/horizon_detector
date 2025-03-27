@@ -7,10 +7,12 @@ image_dir = './images/'
 
 data = pd.read_csv('metadata.csv', header=None)
 images = data[0].tolist()
-left_x = data[1].tolist()
-left_y = data[2].tolist()
-right_x = data[3].tolist()
-right_y = data[4].tolist()
+w = data[1].tolist()
+h = data[2].tolist()
+left_x = data[3].tolist()
+left_y = data[4].tolist()
+right_x = data[5].tolist()
+right_y = data[6].tolist()
 
 for ix in range(len(images)):
     img_path = os.path.join(image_dir, images[ix])
@@ -20,7 +22,7 @@ for ix in range(len(images)):
     print(f"Line coordinates: ({left_x[ix]}, {left_y[ix]}) to ({right_x[ix]}, {right_y[ix]})")
     
     # Create figure with the exact pixel size of the image
-    plt.figure(figsize=(width/100, height/100), dpi=100)
+    plt.figure(figsize=(width/500, height/500), dpi=100)
     
     # Calculate extent to match MATLAB's coordinate system
     # In MATLAB: 'XData', [1 sz(2)] - (sz(2)+1)/2, 'YData', [sz(1) 1] - (sz(1)+1)/2
