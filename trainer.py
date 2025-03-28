@@ -5,6 +5,7 @@ import numpy as np
 import time
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+import wandb
 from torch.utils.tensorboard import SummaryWriter
 from checkpoint_manager import CheckpointManager
 
@@ -19,7 +20,10 @@ class Trainer:
         device,
         checkpoint_dir="checkpoints",
         tensorboard_dir="runs",
-        max_checkpoints=5
+        max_checkpoints=5,
+        use_wandb=True,
+        wandb_project="horizon_detector",
+        wandb_config=None
     ):
         self.model = model
         self.train_loader = train_loader
@@ -28,6 +32,7 @@ class Trainer:
         self.optimizer = optimizer
         self.device = device
         self.scheduler = None
+        self.use_wandb = use_wandb
         
         self.checkpoint_manager = CheckpointManager(checkpoint_dir, max_checkpoints)
         self.writer = SummaryWriter(tensorboard_dir)
@@ -39,6 +44,15 @@ class Trainer:
         self.current_epoch = 0
         
         self.model.to(self.device)
+        
+        # Initialize wandb if requested
+        if self.use_wandb:
+            if not wandb.run:
+                # Initialize wandb
+                wandb.init(project=wandb_project, config=wandb_config)
+                
+                # Log model architecture details
+                wandb.watch(self.model, log='all')
         
     def set_scheduler(self, scheduler_type, **kwargs):
         if scheduler_type == "step":
@@ -165,6 +179,14 @@ class Trainer:
         self.lr_history.append(current_lr)
         self.writer.add_scalar('Learning_rate', current_lr, self.current_epoch)
         
+        # Log to wandb
+        if self.use_wandb:
+            wandb.log({
+                'train_loss': epoch_train_loss,
+                'learning_rate': current_lr,
+                'epoch': self.current_epoch
+            })
+        
         return epoch_train_loss
     
     def validate_epoch(self):
@@ -192,6 +214,13 @@ class Trainer:
         
         # Log to tensorboard
         self.writer.add_scalar('Loss/validation', epoch_val_loss, self.current_epoch)
+        
+        # Log to wandb
+        if self.use_wandb:
+            wandb.log({
+                'val_loss': epoch_val_loss,
+                'epoch': self.current_epoch
+            })
         
         # Update scheduler if it's ReduceLROnPlateau
         if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
@@ -251,6 +280,14 @@ class Trainer:
                 # Log test metrics to tensorboard
                 self.writer.add_scalar('Test/mean_avg_y_error', mean_avg_y_error, epoch)
                 self.writer.add_scalar('Test/mean_roll_error', mean_roll_error, epoch)
+                
+                # Log test metrics to wandb
+                if self.use_wandb:
+                    wandb.log({
+                        'test_avg_y_error': mean_avg_y_error,
+                        'test_roll_error': mean_roll_error,
+                        'epoch': epoch
+                    })
             
             # Update scheduler (except for OneCycleLR and ReduceLROnPlateau)
             if self.scheduler is not None and not isinstance(self.scheduler, torch.optim.lr_scheduler.OneCycleLR) and not isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
@@ -336,6 +373,24 @@ class Trainer:
         
         # Close tensorboard writer
         self.writer.close()
+        
+        # Finish wandb run
+        if self.use_wandb and wandb.run:
+            # Log final model as an artifact
+            model_artifact = wandb.Artifact(
+                name=f"model-{wandb.run.id}", 
+                type="model",
+                description=f"Trained horizon detection model - final validation loss: {min(self.val_losses):.6f}"
+            )
+            # Add the best model file to the artifact
+            model_artifact.add_file(os.path.join("checkpoints", "best_model.pth"))
+            wandb.log_artifact(model_artifact)
+            
+            # Upload plots
+            wandb.log({"final_training_curve": wandb.Image(os.path.join('training_plots', 'training_results.png'))})
+            
+            # Finish the run
+            wandb.finish()
         
         # Return test metrics if collected
         if test_loader is not None and test_avg_y_errors and test_roll_errors:

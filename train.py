@@ -5,6 +5,7 @@ import torch.optim as optim
 import numpy as np
 import argparse
 import time
+import wandb
 from horizon_dataset import create_data_loaders
 from horizon_model import HorizonNet, HorizonNetLight
 from trainer import Trainer
@@ -21,6 +22,9 @@ def main():
                         choices=['step', 'cosine', 'plateau', 'one_cycle', 'warmup_cosine'],
                         help='learning rate scheduler to use')
     parser.add_argument('--early-stopping', type=int, default=10, help='patience for early stopping')
+    parser.add_argument('--no-wandb', action='store_true', help='disable Weights & Biases logging')
+    parser.add_argument('--wandb-project', type=str, default='horizon_detector', help='Weights & Biases project name')
+    parser.add_argument('--run-name', type=str, default=None, help='Name for the wandb run')
     args = parser.parse_args()
     
     # Check if MPS is available
@@ -114,6 +118,33 @@ def main():
     # Use AdamW optimizer which has better performance than regular Adam
     optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     
+    # Set up wandb config
+    use_wandb = not args.no_wandb
+    wandb_config = {
+        'model': args.model,
+        'learning_rate': args.lr,
+        'epochs': args.epochs,
+        'batch_size': args.batch_size,
+        'scheduler': args.scheduler,
+        'early_stopping_patience': args.early_stopping,
+        'optimizer': 'AdamW',
+        'weight_decay': 1e-4,
+        'criterion': 'WeightedMSELoss',
+        'y_weight': 0.7,
+        'roll_weight': 0.3,
+        'architecture': model.__class__.__name__,
+        'device': str(device),
+        'dataset_size': len(train_loader.sampler) + len(val_loader.sampler) + len(test_loader.sampler),
+        'train_size': len(train_loader.sampler),
+        'val_size': len(val_loader.sampler),
+        'test_size': len(test_loader.sampler)
+    }
+    
+    # Setup wandb
+    if use_wandb:
+        run_name = args.run_name or f"{model_name}_{args.scheduler}_lr{args.lr}"
+        wandb.init(project=args.wandb_project, config=wandb_config, name=run_name)
+    
     # Create trainer
     trainer = Trainer(
         model=model,
@@ -123,7 +154,10 @@ def main():
         optimizer=optimizer,
         device=device,
         checkpoint_dir="checkpoints",
-        tensorboard_dir="runs"
+        tensorboard_dir="runs",
+        use_wandb=use_wandb,
+        wandb_project=args.wandb_project,
+        wandb_config=wandb_config
     )
     
     # Configure learning rate scheduler
