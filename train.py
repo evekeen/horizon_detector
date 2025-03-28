@@ -5,8 +5,13 @@ import torch.optim as optim
 import numpy as np
 import argparse
 import time
-import wandb
-from horizon_dataset import create_data_loaders
+try:
+    import wandb
+    wandb_available = True
+except ImportError:
+    wandb_available = False
+    print("Warning: wandb not found. Running without Weights & Biases logging.")
+from horizon_dataset import create_data_loaders, HorizonDataset
 from horizon_model import HorizonNet, HorizonNetLight
 from trainer import Trainer
 
