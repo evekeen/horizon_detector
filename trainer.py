@@ -383,11 +383,11 @@ class Trainer:
                 outputs = self.model(inputs)
                 
                 # Denormalize the predictions and targets
-                pred_avg_y = outputs[:, 0]
-                pred_roll = outputs[:, 1] * 90.0
+                pred_avg_y = outputs[:, 0] * 2500.0  # Denormalize from [-1, 1] to pixel coordinates
+                pred_roll = outputs[:, 1] * 90.0  # Denormalize from [-1, 1] to degrees
                 
-                true_avg_y = targets[:, 0]
-                true_roll = targets[:, 1] * 90.0
+                true_avg_y = targets[:, 0] * 2500.0  # Denormalize from [-1, 1] to pixel coordinates
+                true_roll = targets[:, 1] * 90.0  # Denormalize from [-1, 1] to degrees
                 
                 # Calculate errors
                 avg_y_error = torch.abs(pred_avg_y - true_avg_y)

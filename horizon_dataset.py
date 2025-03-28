@@ -42,11 +42,14 @@ class HorizonDataset(Dataset):
         avg_y = self.horizon_data.iloc[idx, 1]
         roll_angle = self.horizon_data.iloc[idx, 2]
         
+        # Normalize avg_y to [-1, 1] assuming max image height of 5000 pixels
+        avg_y_normalized = avg_y / 2500.0  # 2500 is half of 5000, to center at 0
+        
         # Roll angle is already in degrees [-90, 90]
         # Normalize to [-1, 1]
         roll_angle_normalized = roll_angle / 90.0
         
-        targets = torch.tensor([avg_y, roll_angle_normalized], dtype=torch.float)
+        targets = torch.tensor([avg_y_normalized, roll_angle_normalized], dtype=torch.float)
         
         return image, targets
 
