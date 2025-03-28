@@ -31,19 +31,21 @@ class HorizonNetLight(nn.Module):
     def __init__(self, pretrained=True):
         super(HorizonNetLight, self).__init__()
         
-        mobilenet = models.mobilenet_v3_small(weights='DEFAULT' if pretrained else None)
+        mobilenet = models.mobilenet_v3_large(weights='DEFAULT' if pretrained else None)
         
         self.backbone = mobilenet.features
         self.pool = nn.AdaptiveAvgPool2d(1)
         
         self.regression_head = nn.Sequential(
-            nn.Linear(576, 256),
+            nn.Linear(960, 512),  # mobilenet_v3_large has 960 features
+            nn.BatchNorm1d(512),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(512, 128),
+            nn.BatchNorm1d(128),
             nn.ReLU(),
             nn.Dropout(0.2),
-            nn.Linear(256, 64),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(64, 2)  # Output: [avg_y, roll_angle]
+            nn.Linear(128, 2)  # Output: [avg_y, roll_angle]
         )
         
     def forward(self, x):
