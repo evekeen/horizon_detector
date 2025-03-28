@@ -16,4 +16,6 @@ EOL
 region = ${AWS_DEFAULT_REGION}
 EOL
     fi
+else
+    echo "No AWS credentials provided"
 fi

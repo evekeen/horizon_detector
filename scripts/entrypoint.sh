@@ -20,8 +20,15 @@ if [ ! -z "$S3_DATASET_PATH" ]; then
     /workspace/unpack_dataset.sh --purge .
     mv -r . /workspace/repo/
     cd /workspace/repo
+else
+    echo "No dataset provided"
 fi
 
-# Keep container running
-echo "Setup completed. Container kept running for SSH access."
-tail -f /dev/null
+# Create python environment
+echo "Creating python environment..."
+python -m venv /workspace/venv
+source /workspace/venv/bin/activate
+
+# Install dependencies
+pip install --no-cache-dir -r requirements.txt
+
