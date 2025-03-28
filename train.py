@@ -50,18 +50,9 @@ def main():
     
     print("\n[1/5] Loading and preparing dataset...")
     
-    # Use predefined splits if available
-    custom_split_files = None
-    if os.path.exists('split/train.txt'):
-        custom_split_files = {
-            'train': 'split/train.txt',
-            'val': 'split/val.txt',
-            'test': 'split/test.txt'
-        }
-        print("Using predefined dataset splits from 'split/' directory")
     
     train_loader, val_loader, test_loader = create_data_loaders(
-        csv_file, img_dir, batch_size=batch_size, custom_split_files=custom_split_files
+        csv_file, img_dir, batch_size=batch_size
     )
     
     print(f"✓ Dataset loaded successfully")

@@ -88,7 +88,7 @@ class HorizonDataset(Dataset):
             return image, targets, orig_values
 
 
-def create_data_loaders(csv_file, img_dir, batch_size=32, train_split=0.8, val_split=0.1, custom_split_files=None):
+def create_data_loaders(csv_file, img_dir, batch_size=32, train_split=0.8, val_split=0.1):
     """
     Create data loaders with improved handling of dataset splits
     
@@ -96,9 +96,8 @@ def create_data_loaders(csv_file, img_dir, batch_size=32, train_split=0.8, val_s
         csv_file: Path to CSV file with horizon data
         img_dir: Directory containing images
         batch_size: Batch size for dataloaders
-        train_split: Fraction of data to use for training (if custom_split_files is None)
-        val_split: Fraction of data to use for validation (if custom_split_files is None)
-        custom_split_files: Dict with keys 'train', 'val', 'test' pointing to files containing image names
+        train_split: Fraction of data to use for training
+        val_split: Fraction of data to use for validation
     """
     # Create train dataset with augmentations
     train_dataset = HorizonDataset(csv_file, img_dir, train_mode=True)
@@ -107,30 +106,17 @@ def create_data_loaders(csv_file, img_dir, batch_size=32, train_split=0.8, val_s
     val_dataset = HorizonDataset(csv_file, img_dir, train_mode=False)
     test_dataset = HorizonDataset(csv_file, img_dir, train_mode=False)
     
-    if custom_split_files and os.path.exists(custom_split_files.get('train', '')):
-        # Use predefined splits if provided
-        train_files = [line.strip() for line in open(custom_split_files['train']).readlines()]
-        val_files = [line.strip() for line in open(custom_split_files['val']).readlines()]
-        test_files = [line.strip() for line in open(custom_split_files['test']).readlines()]
-        
-        train_indices = [i for i, file in enumerate(train_dataset.horizon_data.iloc[:, 0]) 
-                         if os.path.basename(file) in train_files]
-        val_indices = [i for i, file in enumerate(val_dataset.horizon_data.iloc[:, 0]) 
-                       if os.path.basename(file) in val_files]
-        test_indices = [i for i, file in enumerate(test_dataset.horizon_data.iloc[:, 0]) 
-                        if os.path.basename(file) in test_files]
-    else:
-        # Create random splits
-        dataset_size = len(train_dataset)
-        indices = list(range(dataset_size))
-        np.random.shuffle(indices)
-        
-        train_end = int(train_split * dataset_size)
-        val_end = train_end + int(val_split * dataset_size)
-        
-        train_indices = indices[:train_end]
-        val_indices = indices[train_end:val_end]
-        test_indices = indices[val_end:]
+    
+    dataset_size = len(train_dataset)
+    indices = list(range(dataset_size))
+    np.random.shuffle(indices)
+    
+    train_end = int(train_split * dataset_size)
+    val_end = train_end + int(val_split * dataset_size)
+    
+    train_indices = indices[:train_end]
+    val_indices = indices[train_end:val_end]
+    test_indices = indices[val_end:]
     
     # Create samplers
     train_sampler = torch.utils.data.SubsetRandomSampler(train_indices)
