@@ -79,16 +79,11 @@ class HorizonDataset(Dataset):
         
         targets = torch.tensor([avg_y_normalized, roll_angle_normalized], dtype=torch.float)
         
-        # Original values for debugging or custom loss functions
-        orig_values = torch.tensor([avg_y, roll_angle], dtype=torch.float)
-        
-        if self.train_mode:
-            return image, targets
-        else:
-            return image, targets, orig_values
+        # Always return just image and targets for compatibility with existing code
+        return image, targets
 
 
-def create_data_loaders(csv_file, img_dir, batch_size=32, train_split=0.8, val_split=0.1):
+def create_data_loaders(csv_file, img_dir, batch_size=32, train_split=0.8, val_split=0.1, custom_split_files=None):
     """
     Create data loaders with improved handling of dataset splits
     
