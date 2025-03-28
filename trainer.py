@@ -383,11 +383,19 @@ class Trainer:
                 outputs = self.model(inputs)
                 
                 # Denormalize the predictions and targets
-                pred_avg_y = outputs[:, 0] * 2500.0  # Denormalize from [-1, 1] to pixel coordinates
-                pred_roll = outputs[:, 1] * 90.0  # Denormalize from [-1, 1] to degrees
+                # Use dataset statistics to denormalize the z-score normalized values
+                avg_y_mean = test_loader.dataset.avg_y_mean
+                avg_y_std = test_loader.dataset.avg_y_std
+                roll_mean = test_loader.dataset.roll_mean
+                roll_std = test_loader.dataset.roll_std
                 
-                true_avg_y = targets[:, 0] * 2500.0  # Denormalize from [-1, 1] to pixel coordinates
-                true_roll = targets[:, 1] * 90.0  # Denormalize from [-1, 1] to degrees
+                # Denormalize predictions using z-score statistics
+                pred_avg_y = outputs[:, 0] * avg_y_std + avg_y_mean
+                pred_roll = outputs[:, 1] * roll_std + roll_mean
+                
+                # Denormalize targets using z-score statistics
+                true_avg_y = targets[:, 0] * avg_y_std + avg_y_mean
+                true_roll = targets[:, 1] * roll_std + roll_mean
                 
                 # Calculate errors
                 avg_y_error = torch.abs(pred_avg_y - true_avg_y)

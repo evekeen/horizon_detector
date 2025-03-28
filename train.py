@@ -45,8 +45,19 @@ def main():
     print("=" * 50)
     
     print("\n[1/5] Loading and preparing dataset...")
+    
+    # Use predefined splits if available
+    custom_split_files = None
+    if os.path.exists('split/train.txt'):
+        custom_split_files = {
+            'train': 'split/train.txt',
+            'val': 'split/val.txt',
+            'test': 'split/test.txt'
+        }
+        print("Using predefined dataset splits from 'split/' directory")
+    
     train_loader, val_loader, test_loader = create_data_loaders(
-        csv_file, img_dir, batch_size=batch_size
+        csv_file, img_dir, batch_size=batch_size, custom_split_files=custom_split_files
     )
     
     print(f"✓ Dataset loaded successfully")
@@ -72,9 +83,36 @@ def main():
     print(f"  - Trainable parameters: {trainable_params:,}")
     
     print("\n[3/5] Setting up training configuration...")
-    # Define loss function and optimizer
-    criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    # Define custom weighted loss function to balance the y-coordinate and roll angle loss
+    class WeightedMSELoss(nn.Module):
+        def __init__(self, y_weight=0.7, roll_weight=0.3):
+            super(WeightedMSELoss, self).__init__()
+            self.y_weight = y_weight
+            self.roll_weight = roll_weight
+            self.mse = nn.MSELoss(reduction='none')
+            
+        def forward(self, outputs, targets):
+            # Split the prediction and target into y and roll components
+            pred_y = outputs[:, 0]
+            pred_roll = outputs[:, 1]
+            target_y = targets[:, 0]
+            target_roll = targets[:, 1]
+            
+            # Calculate individual losses
+            y_loss = self.mse(pred_y, target_y)
+            roll_loss = self.mse(pred_roll, target_roll)
+            
+            # Weight the losses
+            weighted_loss = self.y_weight * y_loss + self.roll_weight * roll_loss
+            
+            # Return the mean loss across the batch
+            return weighted_loss.mean()
+    
+    # Use custom loss function
+    criterion = WeightedMSELoss(y_weight=0.7, roll_weight=0.3)
+    
+    # Use AdamW optimizer which has better performance than regular Adam
+    optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     
     # Create trainer
     trainer = Trainer(
