@@ -30,7 +30,7 @@ def predict_horizon(model, image_path, device):
         output = model(input_tensor)
     
     # Denormalize predictions
-    avg_y = output[0, 0].item() * 5000.0
+    avg_y = output[0, 0].item()
     roll_angle = output[0, 1].item() * 90.0
     
     print(f"Predicted avg_y: {avg_y:.2f}, roll_angle: {roll_angle:.2f} degrees")

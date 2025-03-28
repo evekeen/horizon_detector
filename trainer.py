@@ -383,10 +383,10 @@ class Trainer:
                 outputs = self.model(inputs)
                 
                 # Denormalize the predictions and targets
-                pred_avg_y = outputs[:, 0] * 5000.0
+                pred_avg_y = outputs[:, 0]
                 pred_roll = outputs[:, 1] * 90.0
                 
-                true_avg_y = targets[:, 0] * 5000.0
+                true_avg_y = targets[:, 0]
                 true_roll = targets[:, 1] * 90.0
                 
                 # Calculate errors
