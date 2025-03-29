@@ -11,6 +11,7 @@ try:
 except ImportError:
     wandb_available = False
     print("Warning: wandb not found. Running without Weights & Biases logging.")
+from accelerate import Accelerator, DistributedDataParallelKwargs
 from horizon_dataset import create_data_loaders, HorizonDataset
 from horizon_model import HorizonNet, HorizonNetLight
 from trainer import Trainer
@@ -30,19 +31,25 @@ def main():
     parser.add_argument('--no-wandb', action='store_true', help='disable Weights & Biases logging')
     parser.add_argument('--wandb-project', type=str, default='horizon_detector', help='Weights & Biases project name')
     parser.add_argument('--run-name', type=str, default=None, help='Name for the wandb run')
+    parser.add_argument('--mixed-precision', type=str, default=None, choices=[None, 'fp16', 'bf16', 'fp8'], help='mixed precision training')
+    parser.add_argument('--use-wandb', action='store_true', help='enable Weights & Biases logging with accelerator')
     args = parser.parse_args()
     
-    # Check if MPS is available
-    if torch.backends.mps.is_available():
-        device = torch.device("mps")
-        print("Using MPS device")
-    else:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"MPS not available, using {device}")
+    # Initialize accelerator
+    ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
+    accelerator = Accelerator(
+        mixed_precision=args.mixed_precision,
+        gradient_accumulation_steps=1,
+        log_with="wandb" if args.use_wandb else None,
+        kwargs_handlers=[ddp_kwargs],
+        device_placement=True
+    )
+    
+    device = accelerator.device
+    print(f"Using device: {device}")
     
     # Set random seed for reproducibility
-    torch.manual_seed(42)
-    np.random.seed(42)
+    accelerator.set_seed(42)
     
     # Create data loaders
     csv_file = 'horizon_data.csv'
@@ -133,13 +140,26 @@ def main():
         'dataset_size': len(train_loader.sampler) + len(val_loader.sampler) + len(test_loader.sampler),
         'train_size': len(train_loader.sampler),
         'val_size': len(val_loader.sampler),
-        'test_size': len(test_loader.sampler)
+        'test_size': len(test_loader.sampler),
+        'mixed_precision': args.mixed_precision
     }
     
-    # Setup wandb
-    if use_wandb:
+    # If using accelerator for WandB, init tracking
+    if args.use_wandb:
+        accelerator.init_trackers(
+            project_name=args.wandb_project,
+            config=wandb_config,
+            init_kwargs={"wandb": {"name": args.run_name or f"{model_name}_{args.scheduler}_lr{args.lr}"}}
+        )
+    # Otherwise use standard wandb init
+    elif use_wandb:
         run_name = args.run_name or f"{model_name}_{args.scheduler}_lr{args.lr}"
         wandb.init(project=args.wandb_project, config=wandb_config, name=run_name)
+    
+    # Prepare criterion as well
+    model, optimizer, train_loader, val_loader, criterion = accelerator.prepare(
+        model, optimizer, train_loader, val_loader, criterion
+    )
     
     # Create trainer
     trainer = Trainer(
@@ -153,7 +173,8 @@ def main():
         tensorboard_dir="runs",
         use_wandb=use_wandb,
         wandb_project=args.wandb_project,
-        wandb_config=wandb_config
+        wandb_config=wandb_config,
+        accelerator=accelerator
     )
     
     # Configure learning rate scheduler

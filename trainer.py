@@ -23,7 +23,8 @@ class Trainer:
         max_checkpoints=5,
         use_wandb=True,
         wandb_project="horizon_detector",
-        wandb_config=None
+        wandb_config=None,
+        accelerator=None
     ):
         self.model = model
         self.train_loader = train_loader
@@ -33,6 +34,7 @@ class Trainer:
         self.device = device
         self.scheduler = None
         self.use_wandb = use_wandb
+        self.accelerator = accelerator
         
         self.checkpoint_manager = CheckpointManager(checkpoint_dir, max_checkpoints)
         self.writer = SummaryWriter(tensorboard_dir)
@@ -43,10 +45,12 @@ class Trainer:
         self.best_val_loss = float('inf')
         self.current_epoch = 0
         
-        self.model.to(self.device)
+        # If not using accelerator, move model to device
+        if self.accelerator is None:
+            self.model.to(self.device)
         
-        # Initialize wandb if requested
-        if self.use_wandb:
+        # Initialize wandb if requested and not using accelerator's wandb
+        if self.use_wandb and self.accelerator is None:
             if not wandb.run:
                 # Initialize wandb
                 wandb.init(project=wandb_project, config=wandb_config)
@@ -146,15 +150,25 @@ class Trainer:
         train_pbar = tqdm(self.train_loader, desc=f"Training Epoch {self.current_epoch+1}", leave=False)
         
         for inputs, targets in train_pbar:
-            inputs = inputs.to(self.device)
-            targets = targets.to(self.device)
+            # If not using accelerator, move data to device
+            if self.accelerator is None:
+                inputs = inputs.to(self.device)
+                targets = targets.to(self.device)
             
+            # Zero gradients
             self.optimizer.zero_grad()
             
+            # Forward pass
             outputs = self.model(inputs)
             loss = self.criterion(outputs, targets)
             
-            loss.backward()
+            # Backward pass
+            if self.accelerator:
+                self.accelerator.backward(loss)
+            else:
+                loss.backward()
+            
+            # Optimizer step
             self.optimizer.step()
             
             # Update OneCycleLR scheduler every batch if used
@@ -197,8 +211,10 @@ class Trainer:
         
         with torch.no_grad():
             for inputs, targets in val_pbar:
-                inputs = inputs.to(self.device)
-                targets = targets.to(self.device)
+                # If not using accelerator, move data to device
+                if self.accelerator is None:
+                    inputs = inputs.to(self.device)
+                    targets = targets.to(self.device)
                 
                 outputs = self.model(inputs)
                 loss = self.criterion(outputs, targets)
@@ -432,8 +448,10 @@ class Trainer:
         
         with torch.no_grad():
             for inputs, targets in test_loader:
-                inputs = inputs.to(self.device)
-                targets = targets.to(self.device)
+                # If not using accelerator, move data to device
+                if self.accelerator is None:
+                    inputs = inputs.to(self.device)
+                    targets = targets.to(self.device)
                 
                 outputs = self.model(inputs)
                 
