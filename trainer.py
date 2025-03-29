@@ -146,10 +146,13 @@ class Trainer:
     def train_epoch(self):
         self.model.train()
         running_loss = 0.0
+        batch_count = 0
+        total_batches = len(self.train_loader)
+        log_interval = max(1, total_batches // 10)  # Log approximately 10 times per epoch
         
         train_pbar = tqdm(self.train_loader, desc=f"Training Epoch {self.current_epoch+1}", leave=False)
         
-        for inputs, targets in train_pbar:
+        for batch_idx, (inputs, targets) in enumerate(train_pbar):
             # If not using accelerator, move data to device
             if self.accelerator is None:
                 inputs = inputs.to(self.device)
@@ -178,6 +181,27 @@ class Trainer:
             # Update statistics
             current_loss = loss.item()
             running_loss += current_loss * inputs.size(0)
+            batch_count += 1
+            
+            # Log to wandb more frequently (approximately 10 times per epoch)
+            if self.use_wandb and (batch_idx % log_interval == 0 or batch_idx == total_batches - 1):
+                step = self.current_epoch * total_batches + batch_idx
+                if self.accelerator and self.accelerator.is_main_process:
+                    current_lr = self.optimizer.param_groups[0]['lr']
+                    if hasattr(self.accelerator, 'log') and self.accelerator.is_main_process:
+                        self.accelerator.log({
+                            'train_loss_step': current_loss,
+                            'learning_rate': current_lr,
+                            'epoch': self.current_epoch,
+                            'progress': (batch_idx + 1) / total_batches * 100  # Percentage of epoch completed
+                        }, step=step)
+                    elif wandb.run is not None:
+                        wandb.log({
+                            'train_loss_step': current_loss,
+                            'learning_rate': current_lr,
+                            'epoch': self.current_epoch,
+                            'progress': (batch_idx + 1) / total_batches * 100  # Percentage of epoch completed
+                        }, step=step)
             
             # Update progress bar
             train_pbar.set_postfix({'batch_loss': f"{current_loss:.4f}"})
@@ -206,11 +230,13 @@ class Trainer:
     def validate_epoch(self):
         self.model.eval()
         running_loss = 0.0
+        total_batches = len(self.val_loader)
+        log_interval = max(1, total_batches // 5)  # Log approximately 5 times during validation
         
         val_pbar = tqdm(self.val_loader, desc=f"Validation Epoch {self.current_epoch+1}", leave=False)
         
         with torch.no_grad():
-            for inputs, targets in val_pbar:
+            for batch_idx, (inputs, targets) in enumerate(val_pbar):
                 # If not using accelerator, move data to device
                 if self.accelerator is None:
                     inputs = inputs.to(self.device)
@@ -221,6 +247,21 @@ class Trainer:
                 
                 current_loss = loss.item()
                 running_loss += current_loss * inputs.size(0)
+                
+                # Log validation metrics more frequently
+                if self.use_wandb and (batch_idx % log_interval == 0 or batch_idx == total_batches - 1):
+                    step = self.current_epoch * total_batches + batch_idx
+                    if self.accelerator and self.accelerator.is_main_process:
+                        if hasattr(self.accelerator, 'log'):
+                            self.accelerator.log({
+                                'val_loss_step': current_loss,
+                                'val_progress': (batch_idx + 1) / total_batches * 100  # Percentage of validation completed
+                            }, step=step)
+                        elif wandb.run is not None:
+                            wandb.log({
+                                'val_loss_step': current_loss,
+                                'val_progress': (batch_idx + 1) / total_batches * 100  # Percentage of validation completed
+                            }, step=step)
                 
                 # Update progress bar
                 val_pbar.set_postfix({'batch_loss': f"{current_loss:.4f}"})
