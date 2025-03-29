@@ -32,3 +32,5 @@ source /workspace/venv/bin/activate
 # Install dependencies
 pip install --no-cache-dir -r requirements.txt
 
+python convert_dataset.py
+
