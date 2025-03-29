@@ -13,3 +13,4 @@ metadata*.csv
 hlw_2_2.zip
 hlw/
 wandb/
+augmentation_checks/

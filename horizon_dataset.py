@@ -22,33 +22,36 @@ class HorizonDataset(Dataset):
         self.roll_mean = np.mean(roll_values)
         self.roll_std = np.std(roll_values)
         
+        # Image shape information for coordinate calculations
+        self.orig_size = 280  # Initial resize size
+        
         # Standard image normalization
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], 
                                          std=[0.229, 0.224, 0.225])
         
         if transform is None:
-            # Base transformation pipeline
-            base_transform = [
-                transforms.Resize((256, 256)),
-                transforms.CenterCrop(224),
-                transforms.ToTensor(),
-                normalize
-            ]
-            
             if train_mode:
-                # Add data augmentation for training
-                self.transform = transforms.Compose([
-                    transforms.Resize((280, 280)),
-                    transforms.RandomCrop(224),
-                    transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1),
-                    transforms.RandomHorizontalFlip(),
-                    transforms.RandomRotation(10),  # Small rotations to avoid affecting the roll angle too much
+                # For training, we need to handle augmentations carefully
+                # We'll track and apply augmentations manually to adjust labels
+                self.use_augmentations = True
+                self.base_transform = transforms.Compose([
+                    transforms.Resize((self.orig_size, self.orig_size)),
+                ])
+                # Image-only transformations that don't affect labels
+                self.post_transform = transforms.Compose([
                     transforms.ToTensor(),
+                    transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3),
                     normalize,
                 ])
             else:
-                self.transform = transforms.Compose(base_transform)
+                self.use_augmentations = False
+                self.transform = transforms.Compose([
+                    transforms.Resize((self.orig_size, self.orig_size)),
+                    transforms.ToTensor(),
+                    normalize
+                ])
         else:
+            self.use_augmentations = False
             self.transform = transform
     
     def __len__(self):
@@ -67,17 +70,31 @@ class HorizonDataset(Dataset):
             # Return a placeholder black image if the image can't be loaded
             image = Image.new('RGB', (224, 224), color='black')
         
-        # Apply transformations
-        image = self.transform(image)
+        # Get original labels
+        avg_y = self.horizon_data.iloc[idx, 1]  # Horizon Y coordinate (0-1)
+        roll_angle = self.horizon_data.iloc[idx, 2]  # Roll angle in degrees
         
-        avg_y = self.horizon_data.iloc[idx, 1]
-        roll_angle = self.horizon_data.iloc[idx, 2]
+        # Apply augmentations with label adjustments if training
+        if hasattr(self, 'use_augmentations') and self.use_augmentations:
+            _, orig_img_height = image.size
+
+            # Step 1: Resize image to standard size
+            image = self.base_transform(image)
+            avg_y = avg_y #* self.orig_size / orig_img_height
+            
+            # Step 4: Apply horizontal flip (affects roll angle)
+            flip_prob = torch.rand(1).item()
+            if flip_prob > 0.5:
+                image = transforms.functional.hflip(image)
+                roll_angle = -roll_angle
+            
+            
+            image = self.post_transform(image)
+        else:            
+            image = self.transform(image)
         
-        # Z-score normalization for more stable training
-        avg_y_normalized = (avg_y - self.avg_y_mean) / (self.avg_y_std + 1e-6)
-        roll_angle_normalized = (roll_angle - self.roll_mean) / (self.roll_std + 1e-6)
-        
-        targets = torch.tensor([avg_y_normalized, roll_angle_normalized], dtype=torch.float)
+        avg_y = avg_y / self.orig_size
+        targets = torch.tensor([avg_y, roll_angle], dtype=torch.float)
         
         # Always return just image and targets for compatibility with existing code
         return image, targets
