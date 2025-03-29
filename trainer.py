@@ -522,8 +522,8 @@ class Trainer:
                     avg_y_error = self.accelerator.gather(avg_y_error)
                     roll_error = self.accelerator.gather(roll_error)
                 
-                avg_y_errors.extend(avg_y_error.cpu().numpy())
-                roll_angle_errors.extend(roll_error.cpu().numpy())
+                avg_y_errors.extend(avg_y_error.detach().cpu().numpy())
+                roll_angle_errors.extend(roll_error.detach().cpu().numpy())
         
         # Make sure to synchronize metrics across processes when using distributed training
         mean_avg_y_error = np.mean(avg_y_errors)
