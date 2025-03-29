@@ -289,7 +289,9 @@ class Trainer:
             # Test phase (if test_loader is provided)
             if test_loader is not None:
                 print(f"Testing model after epoch {epoch+1}...")
-                mean_avg_y_error, mean_roll_error = self.evaluate(test_loader)
+                # Add proper test evaluation with accelerator
+                with self.accelerator.autocast() if self.accelerator else torch.no_grad():
+                    mean_avg_y_error, mean_roll_error = self.evaluate(test_loader)
                 test_avg_y_errors.append(mean_avg_y_error)
                 test_roll_errors.append(mean_roll_error)
                 
@@ -446,8 +448,8 @@ class Trainer:
         avg_y_errors = []
         roll_angle_errors = []
         
-        with torch.no_grad():
-            for inputs, targets in test_loader:
+        # Don't wrap in torch.no_grad() here since it might be handled by the caller with accelerator.autocast()
+        for inputs, targets in test_loader:
                 # If not using accelerator, move data to device
                 if self.accelerator is None:
                     inputs = inputs.to(self.device)
@@ -474,13 +476,27 @@ class Trainer:
                 avg_y_error = torch.abs(pred_avg_y - true_avg_y)
                 roll_error = torch.abs(pred_roll - true_roll)
                 
+                # Make sure to gather values across all processes when using distributed training
+                if self.accelerator and self.accelerator.use_distributed:
+                    avg_y_error = self.accelerator.gather(avg_y_error)
+                    roll_error = self.accelerator.gather(roll_error)
+                
                 avg_y_errors.extend(avg_y_error.cpu().numpy())
                 roll_angle_errors.extend(roll_error.cpu().numpy())
         
+        # Make sure to synchronize metrics across processes when using distributed training
         mean_avg_y_error = np.mean(avg_y_errors)
         mean_roll_error = np.mean(roll_angle_errors)
         
-        print(f"Mean Average Y Error: {mean_avg_y_error:.2f} pixels")
-        print(f"Mean Roll Angle Error: {mean_roll_error:.2f} degrees")
+        if self.accelerator and self.accelerator.is_main_process:
+            print(f"Mean Average Y Error: {mean_avg_y_error:.2f} pixels")
+            print(f"Mean Roll Angle Error: {mean_roll_error:.2f} degrees")
+        
+        # Ensure all processes use the same metrics for consistency
+        if self.accelerator and self.accelerator.use_distributed:
+            mean_avg_y_error = torch.tensor(mean_avg_y_error, device=self.device)
+            mean_roll_error = torch.tensor(mean_roll_error, device=self.device)
+            mean_avg_y_error = self.accelerator.gather(mean_avg_y_error).mean().item()
+            mean_roll_error = self.accelerator.gather(mean_roll_error).mean().item()
         
         return mean_avg_y_error, mean_roll_error

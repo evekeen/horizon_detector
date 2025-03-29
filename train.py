@@ -159,9 +159,9 @@ def main():
         run_name = args.run_name or f"{model_name}_{args.scheduler}_lr{args.lr}"
         wandb.init(project=args.wandb_project, config=wandb_config, name=run_name)
     
-    # Prepare criterion as well
-    model, optimizer, train_loader, val_loader, criterion = accelerator.prepare(
-        model, optimizer, train_loader, val_loader, criterion
+    # Prepare all dataloaders including test_loader
+    model, optimizer, train_loader, val_loader, test_loader, criterion = accelerator.prepare(
+        model, optimizer, train_loader, val_loader, test_loader, criterion
     )
     
     # Create trainer
